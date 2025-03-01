@@ -3,6 +3,7 @@ const { Web3 } = require("web3");
 const axios = require("axios");
 const config = require("./config");
 const { URL } = require("url");
+const schedule = require("node-schedule");
 
 const API_BASE_URL = "https://quests-usage-dev.prod.zettablock.com/api";
 const INFURA_API_KEY = "9906d191c4034f348b46be77e83360d9";
@@ -527,4 +528,60 @@ async function main() {
   );
 }
 
-main().catch(console.error);
+async function scheduleBot() {
+  const { schedule: scheduleConfig } = config.chatConfig;
+
+  if (!scheduleConfig.enabled) {
+    console.log("🤖 Running single session (scheduling disabled)");
+    return main();
+  }
+
+  console.log("\n=== Bot Schedule Configuration ===");
+  console.log(`📅 Interval: Every ${scheduleConfig.intervalHours} hours`);
+  console.log(`⏰ Start Time: ${scheduleConfig.startTime}`);
+  console.log(`📊 Max Sessions/Day: ${scheduleConfig.maxSessionsPerDay}`);
+  console.log(`⏳ Minimum Gap: ${scheduleConfig.minimumGapHours} hours\n`);
+
+  // Calculate next run time
+  const [startHour, startMinute] = scheduleConfig.startTime
+    .split(":")
+    .map(Number);
+  const now = new Date();
+  const nextRun = new Date(now);
+  nextRun.setHours(startHour, startMinute, 0, 0);
+
+  if (nextRun <= now) {
+    nextRun.setDate(nextRun.getDate() + 1);
+  }
+
+  console.log(`🤖 Next session scheduled for: ${nextRun.toLocaleString()}\n`);
+
+  // Schedule recurring job
+  schedule.scheduleJob(
+    `0 ${startMinute} */${scheduleConfig.intervalHours} * * *`,
+    async () => {
+      const currentHour = new Date().getHours();
+      const currentDate = new Date().toLocaleDateString();
+
+      // Check if within allowed hours
+      if (
+        currentHour < startHour ||
+        currentHour >
+          startHour +
+            scheduleConfig.maxSessionsPerDay * scheduleConfig.minimumGapHours
+      ) {
+        return;
+      }
+
+      console.log(
+        `\n🤖 Starting scheduled session at ${new Date().toLocaleString()}`
+      );
+      await main();
+      console.log(`\n⏰ Next session in ${scheduleConfig.intervalHours} hours`);
+    }
+  );
+}
+
+if (require.main === module) {
+  scheduleBot().catch(console.error);
+}
